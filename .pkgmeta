@@ -12,9 +12,6 @@ ignore:
   - .gitignore
   - .pkgmeta
 
- # Lets Cures know this is the latest version
-tag: V1.0.5-release
-
 # Changelog file to include in the package
 manual-changelog: CHANGELOG.md
 
