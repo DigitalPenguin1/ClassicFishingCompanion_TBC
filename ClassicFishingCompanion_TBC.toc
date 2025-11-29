@@ -1,0 +1,20 @@
+## Interface: 20505
+## Title: Classic Fishing Companion
+## Notes: Track your fishing catches, fish per hour, locations, and statistics
+## Author: Relyk
+## Version: 1.0.4
+## SavedVariables: ClassicFishingCompanionDB
+
+# Libraries (Embedded Ace3)
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\AceAddon-3.0\AceAddon-3.0.lua
+Libs\AceEvent-3.0\AceEvent-3.0.lua
+Libs\AceConsole-3.0\AceConsole-3.0.lua
+
+# Core Files
+Core.lua
+Database.lua
+UI.lua
+Minimap.lua
+HUD.lua

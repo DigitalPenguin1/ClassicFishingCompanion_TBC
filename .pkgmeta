@@ -1,0 +1,22 @@
+package-as: ClassicFishingCompanion
+
+# Enable creation of a "nolib" package (without embedded libraries)
+# Set to no since addon has embedded Ace3 libraries
+enable-nolib-creation: no
+
+# Files and directories to ignore when packaging
+# Files beginning with a dot (such as .git) are automatically ignored
+ignore:
+  - README.md
+  - .github
+  - .gitignore
+  - .pkgmeta
+
+ # Lets Cures know this is the latest version
+tag: V1.0.5-release
+
+# Changelog file to include in the package
+manual-changelog: CHANGELOG.md
+
+# License file output
+license-output: LICENSE.txt
