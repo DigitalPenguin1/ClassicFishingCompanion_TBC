@@ -1,8 +1,8 @@
 # Classic Fishing Companion
 
-A comprehensive fishing tracker addon for World of Warcraft Anniversary Classic. Track catches, monitor efficiency, view detailed statistics, and display real-time stats with an on-screen HUD.
+A comprehensive fishing tracker addon for World of Warcraft Classic and The Burning Crusade (TBC). Track catches, monitor efficiency, view detailed statistics, and display real-time stats with an on-screen HUD.
 
-**Update 11/22/25** - Waiting on PTR access for TBC so I can start testing. More to come. -- Relyk22
+**Update 11/27/24** - Now with full TBC support! Enhanced combat protection and code optimization improvements included. -- Relyk22
 
 ## Features
 
@@ -101,7 +101,7 @@ Lightweight design with minimal impact:
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
-**Latest (v1.0.4)**: Enhanced combat protection for gear swapping and code optimization improvements.
+**Latest (v1.0.4)**: Updated for TBC support with enhanced combat protection for gear swapping and code optimization improvements.
 
 ## Support
 
@@ -110,7 +110,7 @@ https://github.com/DigitalPenguin1/ClassicFishingCompanion/issues
 
 ## Credits
 
-Created for World of Warcraft Classic
+Created for World of Warcraft Classic and The Burning Crusade (TBC)
 Uses embedded Ace3 libraries (Copyright © 2007, Ace3 Development Team)
 
 ## License

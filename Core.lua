@@ -117,7 +117,7 @@ function CFC:OnEnable()
     self:RegisterEvent("LOOT_OPENED", "OnLootOpened")
     self:RegisterEvent("LOOT_CLOSED", "OnLootClosed")
 
-    -- Create frame for periodic checking (Classic WoW compatible)
+    -- Create frame for periodic checking
     -- Check every 2 seconds for fishing state and lure changes
     self.updateFrame = CreateFrame("Frame")
     self.updateFrame.timeSinceLastUpdate = 0
@@ -186,7 +186,7 @@ function CFC:OnSkillUpdate()
     self:UpdateFishingSkill()
 end
 
--- Check fishing state (called every second via OnUpdate - Classic WoW compatible)
+-- Check fishing state (called every second via OnUpdate)
 function CFC:CheckFishingState()
     -- Check if player has fishing pole equipped
     local mainHandLink = GetInventoryItemLink("player", 16)
@@ -464,7 +464,7 @@ function CFC:OnLootOpened()
         end
 
         -- Check if it's a fishing pole AND not looting a dead mob
-        -- In Classic WoW, when looting a fishing bobber, you typically don't have a dead target
+        -- When looting a fishing bobber, you typically don't have a dead target
         -- When looting a mob, UnitIsDead("target") is true
         local hasDeadTarget = UnitExists("target") and UnitIsDead("target")
 
@@ -527,11 +527,11 @@ function CFC:IsItemFish(itemLink)
     end
 
     -- Check if it's a Trade Good with Fish subtype
-    -- In Classic WoW, fish are categorized as "Trade Goods" with subtype "Trade Goods" or might have other indicators
+    -- Fish are categorized as "Trade Goods" with subtype "Trade Goods" or might have other indicators
     -- We'll use a simple name-based check as fallback
     if itemName then
         local nameLower = string.lower(itemName)
-        -- Common fish keywords in Classic WoW
+        -- Common fish keywords
         if string.find(nameLower, "fish") or
            string.find(nameLower, "salmon") or
            string.find(nameLower, "bass") or
@@ -935,37 +935,15 @@ function CFC:FindItemInBags(itemID)
         print("|cffff8800[CFC Debug]|r Searching bags for item ID: " .. itemID)
     end
 
-    -- Determine which bag API to use with explicit checks
-    local GetNumSlots, GetItemID
+    -- Use TBC C_Container API
+    local GetNumSlots = function(bag) return C_Container.GetContainerNumSlots(bag) end
+    local GetItemID = function(bag, slot)
+        local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
+        return itemInfo and itemInfo.itemID
+    end
 
-    -- Try C_Container API first (Classic Anniversary / Retail)
-    if C_Container and type(C_Container.GetContainerNumSlots) == "function" then
-        GetNumSlots = function(bag) return C_Container.GetContainerNumSlots(bag) end
-        GetItemID = function(bag, slot)
-            local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
-            return itemInfo and itemInfo.itemID
-        end
-        if self.debug then
-            print("|cffff8800[CFC Debug]|r Using C_Container API (Classic Anniversary)")
-        end
-    -- Fallback to old global API (Classic Era)
-    elseif _G.GetContainerNumSlots and type(_G.GetContainerNumSlots) == "function" then
-        GetNumSlots = _G.GetContainerNumSlots
-        GetItemID = _G.GetContainerItemID
-        if self.debug then
-            print("|cffff8800[CFC Debug]|r Using legacy bag API (Classic Era)")
-        end
-    else
-        print("|cffff0000Classic Fishing Companion:|r ERROR: No bag API available!")
-        if self.debug then
-            print("|cffff0000[CFC Debug]|r C_Container exists: " .. tostring(C_Container ~= nil))
-            if C_Container then
-                print("|cffff0000[CFC Debug]|r C_Container.GetContainerNumSlots: " .. tostring(C_Container.GetContainerNumSlots ~= nil))
-                print("|cffff0000[CFC Debug]|r C_Container.GetContainerItemInfo: " .. tostring(C_Container.GetContainerItemInfo ~= nil))
-            end
-            print("|cffff0000[CFC Debug]|r _G.GetContainerNumSlots: " .. tostring(_G.GetContainerNumSlots ~= nil))
-        end
-        return nil, nil
+    if self.debug then
+        print("|cffff8800[CFC Debug]|r Using C_Container API")
     end
 
     for b = 0, 4 do
@@ -1071,21 +1049,24 @@ function CFC:UpdateLureMacro()
         return false
     end
 
-    -- Get lure name
-    local lureNames = {
-        [6529] = "Shiny Bauble",
-        [6530] = "Nightcrawlers",
-        [6532] = "Bright Baubles",
-        [7307] = "Flesh Eating Worm",
-        [6533] = "Aquadynamic Fish Attractor",
-        [6811] = "Aquadynamic Fish Lens",
-        [3486] = "Sharpened Fish Hook",
+    -- Get lure name and icon
+    local lureData = {
+        [6529] = { name = "Shiny Bauble", icon = "INV_Misc_Orb_03" },
+        [6530] = { name = "Nightcrawlers", icon = "INV_Misc_MonsterTail_03" },
+        [6532] = { name = "Bright Baubles", icon = "INV_Misc_Gem_Variety_02" },
+        [7307] = { name = "Flesh Eating Worm", icon = "INV_Misc_MonsterTail_03" },
+        [6533] = { name = "Aquadynamic Fish Attractor", icon = "INV_Misc_Food_26" },
+        [6811] = { name = "Aquadynamic Fish Lens", icon = "INV_Misc_Spyglass_01" },
+        [3486] = { name = "Sharpened Fish Hook", icon = "INV_Misc_Hook_01" },
     }
-    local lureName = lureNames[selectedLureID]
-    if not lureName then
+    local lure = lureData[selectedLureID]
+    if not lure then
         print("|cffff0000Classic Fishing Companion:|r Unknown lure selected!")
         return false
     end
+
+    local lureName = lure.name
+    local lureIcon = lure.icon
 
     -- Build macro text
     local macroText = "#showtooltip\n/use " .. lureName .. "\n/use 16"
@@ -1097,7 +1078,7 @@ function CFC:UpdateLureMacro()
     if macroIndex and macroIndex > 0 then
         -- Macro exists, try to update it
         local success, err = pcall(function()
-            EditMacro(macroIndex, macroName, "INV_Misc_Orb_03", macroText)
+            EditMacro(macroIndex, macroName, lureIcon, macroText)
         end)
 
         if success then
@@ -1111,7 +1092,7 @@ function CFC:UpdateLureMacro()
     else
         -- Macro doesn't exist, try to create it
         local success, err = pcall(function()
-            CreateMacro(macroName, "INV_Misc_Orb_03", macroText, nil)
+            CreateMacro(macroName, lureIcon, macroText, nil)
         end)
 
         if success then
@@ -1233,29 +1214,13 @@ function CFC:ApplySelectedLure()
     local hasLure = false
     local lureBag, lureSlot = nil, nil
 
-    -- Determine which bag API to use
-    local GetNumSlots, GetItemInfo
-
-    -- Try C_Container API first (Classic Anniversary / Retail)
-    if C_Container and type(C_Container.GetContainerNumSlots) == "function" then
-        GetNumSlots = function(bag) return C_Container.GetContainerNumSlots(bag) end
-        GetItemInfo = function(bag, slot)
-            return C_Container.GetContainerItemInfo(bag, slot)
-        end
-        print("|cffff8800[CFC Debug]|r Using C_Container API (Classic Anniversary)")
-    -- Fallback to old global API (Classic Era)
-    elseif _G.GetContainerNumSlots and type(_G.GetContainerNumSlots) == "function" then
-        GetNumSlots = _G.GetContainerNumSlots
-        GetItemInfo = function(bag, slot)
-            local texture, count, locked, quality, readable, lootable, itemLink = _G.GetContainerItemInfo(bag, slot)
-            return { iconFileID = texture, stackCount = count, isLocked = locked, quality = quality, isReadable = readable, hasLoot = lootable, hyperlink = itemLink }
-        end
-        print("|cffff8800[CFC Debug]|r Using legacy bag API (Classic Era)")
-    else
-        print("|cffff0000[CFC Debug]|r ERROR: No bag API available!")
-        print("|cffff0000Classic Fishing Companion:|r Cannot access bags - API not available")
-        return
+    -- Use TBC C_Container API
+    local GetNumSlots = function(bag) return C_Container.GetContainerNumSlots(bag) end
+    local GetItemInfo = function(bag, slot)
+        return C_Container.GetContainerItemInfo(bag, slot)
     end
+
+    print("|cffff8800[CFC Debug]|r Using C_Container API")
 
     -- Use pcall to catch any errors during bag scanning
     local scanSuccess, scanError = pcall(function()
@@ -1335,7 +1300,7 @@ function CFC:ApplySelectedLure()
     end
 
     -- Apply the lure: Use the lure item (picks it up on cursor), then click the fishing pole
-    -- In Classic WoW, we need a small delay between these two actions
+    -- A small delay is needed between these two actions
     print("|cffff8800[CFC Debug]|r Step 1: Using lure from bag " .. lureBag .. " slot " .. lureSlot)
     UseItemFromBag(lureBag, lureSlot)
     print("|cffff8800[CFC Debug]|r Called UseItemFromBag - lure should now be on cursor")

@@ -758,7 +758,14 @@ function UI:CreateLuresTab()
     frame.step3:SetPoint("TOPLEFT", frame.updateMacroBtn, "BOTTOMLEFT", -10, -10)
     frame.step3:SetWidth(250)
     frame.step3:SetJustifyH("LEFT")
-    frame.step3:SetText("3. Drag CFC_ApplyLure macro to your action bar")
+    frame.step3:SetText("3. Type |cffffcc00/macro|r to open the macro interface")
+
+    -- Step 4
+    frame.step4 = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    frame.step4:SetPoint("TOPLEFT", frame.step3, "BOTTOMLEFT", 0, -5)
+    frame.step4:SetWidth(250)
+    frame.step4:SetJustifyH("LEFT")
+    frame.step4:SetText("4. Drag CFC_ApplyLure macro to your action bar")
 
     -- Clear selection button (positioned next to label)
     frame.clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")

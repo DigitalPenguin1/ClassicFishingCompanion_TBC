@@ -2,10 +2,24 @@
 
 All notable changes to Classic Fishing Companion will be documented in this file.
 
+This addon supports World of Warcraft Classic and The Burning Crusade (TBC).
+
 ## [1.0.4] - 2024-11-27
 
-### Update
-- Updated for TBC Support
+### Added
+- Full compatibility with World of Warcraft: The Burning Crusade (TBC)
+  - Tested and verified all features work correctly in TBC
+  - Addon now supports both Classic and TBC game versions
+  - All tracking, statistics, gear sets, and lure management features fully functional
+
+### Changed
+- **IMPORTANT**: All settings, gear sets, and statistics are now character-specific
+  - Each character now has their own separate data and configuration
+  - Gear sets saved on one character won't affect other characters
+  - Previous account-wide data will need to be reconfigured per character
+- CFC_ApplyLure macro now uses the icon of the selected lure
+  - Macro icon changes to match whichever lure you select
+  - Makes it easier to identify which lure is currently configured at a glance
 
 ### Improved
 - Enhanced combat protection for gear swapping
@@ -13,9 +27,15 @@ All notable changes to Classic Fishing Companion will be documented in this file
   - Gear swap now aborts instantly when in combat instead of proceeding with unnecessary operations
   - Dual-layer combat protection ensures complete safety (check in both SwapGear and LoadGearSet functions)
   - Users now receive immediate feedback when attempting to swap gear during combat
+- Improved lure macro instructions in UI
+  - Added step about typing /macro to open the macro interface
+  - Clearer step-by-step instructions for new users
 
 ### Optimized
 - Code cleanup and maintenance
+  - Removed Classic Era API fallback code (~40 lines)
+  - Simplified bag scanning to use only TBC's C_Container API
+  - Updated comments to remove Classic-specific references
   - Removed 4 unused database functions (GetFishStats, GetCatchesInTimeRange, ExportData, PruneOldCatches)
   - Reduced Database.lua from 209 to 131 lines (78 lines of dormant code removed)
   - Improved code maintainability and reduced addon file size
