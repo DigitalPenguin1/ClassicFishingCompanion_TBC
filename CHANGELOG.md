@@ -1,12 +1,11 @@
 # Changelog
 
 All notable changes to Classic Fishing Companion will be documented in this file.
-## [1.0.5] - 2024-11-29
+
+## [1.0.4] - 2024-11-27
 
 ### Update
 - Updated for TBC Support
-
-## [1.0.4] - 2024-11-27
 
 ### Improved
 - Enhanced combat protection for gear swapping
