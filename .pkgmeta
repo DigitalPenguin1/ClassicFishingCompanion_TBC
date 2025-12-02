@@ -1,4 +1,4 @@
-package-as: ClassicFishingCompanion_TBC-v1.0.4-release
+package-as: ClassicFishingCompanion_TBC
 
 # Enable creation of a "nolib" package (without embedded libraries)
 # Set to no since addon has embedded Ace3 libraries
@@ -9,6 +9,7 @@ enable-nolib-creation: no
 ignore:
   - README.md
   - .github
+  - .git
   - .gitignore
   - .pkgmeta
 

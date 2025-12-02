@@ -8,6 +8,34 @@ local HUDModule = CFC.HUD
 
 local hudFrame = nil
 
+-- Lure bonus mapping (constant table to avoid recreation every update)
+local lureBonus = {
+    ["Aquadynamic Fish Attractor"] = 100,
+    ["Bright Baubles"] = 75,
+    ["Flesh Eating Worm"] = 75,
+    ["Nightcrawlers"] = 50,
+    ["Aquadynamic Fish Lens"] = 50,
+    ["Shiny Bauble"] = 25,
+}
+
+-- Lure ID to name with bonus (constant table)
+local lureNamesWithBonus = {
+    [6529] = "Shiny Bauble (+25)",
+    [6530] = "Nightcrawlers (+50)",
+    [6532] = "Bright Baubles (+75)",
+    [7307] = "Flesh Eating Worm (+75)",
+    [6533] = "Aquadynamic Fish Attractor (+100)",
+    [6811] = "Aquadynamic Fish Lens (+50)",
+}
+
+-- Bonus amount to lure name mapping (constant table)
+local bonusToLureName = {
+    [100] = "Aquadynamic Fish Attractor",
+    [75] = "Bright Baubles",
+    [50] = "Nightcrawlers",
+    [25] = "Shiny Bauble",
+}
+
 -- Initialize HUD
 function CFC:InitializeHUD()
     if hudFrame then
@@ -104,6 +132,55 @@ function CFC:InitializeHUD()
     end)
 
     hudFrame.lockIcon:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    -- Lure button (opens Lure tab in UI)
+    hudFrame.applyLureButton = CreateFrame("Button", "CFCLureButton", hudFrame, "UIPanelButtonTemplate")
+    hudFrame.applyLureButton:SetSize(88, 22)
+    hudFrame.applyLureButton:SetPoint("BOTTOMLEFT", hudFrame, "BOTTOMLEFT", 10, 5)
+    hudFrame.applyLureButton:SetText("Lure |TInterface\\Icons\\INV_Misc_Food_26:16|t")
+
+    -- Set button font
+    local applyLureFont = hudFrame.applyLureButton:GetFontString()
+    applyLureFont:SetFont("Fonts\\FRIZQT__.TTF", 10)
+
+    -- Click handler to open Lure tab
+    hudFrame.applyLureButton:SetScript("OnClick", function(self)
+        -- Open main UI
+        if CFC.ToggleUI then
+            -- If UI is hidden, show it
+            if not CFC.mainFrame or not CFC.mainFrame:IsShown() then
+                CFC:ToggleUI()
+            end
+        end
+
+        -- Switch to Lure tab
+        if CFC.UI and CFC.UI.ShowTab then
+            CFC.UI:ShowTab("lures")
+        end
+    end)
+
+    -- Tooltip for lure button
+    hudFrame.applyLureButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+
+        local selectedLureID = CFC.db.profile.selectedLure
+        if selectedLureID then
+            local lureName = lureNamesWithBonus[selectedLureID] or "Unknown Lure"
+            GameTooltip:SetText("Lure Manager", 1, 1, 1)
+            GameTooltip:AddLine("Selected: " .. lureName, 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Click to open Lure tab", 0.6, 1, 0.6)
+        else
+            GameTooltip:SetText("Lure Manager", 1, 1, 1)
+            GameTooltip:AddLine("No lure selected", 1, 0.5, 0.5)
+            GameTooltip:AddLine("Click to open Lure tab", 0.6, 1, 0.6)
+        end
+
+        GameTooltip:Show()
+    end)
+
+    hudFrame.applyLureButton:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
 
@@ -223,33 +300,67 @@ function HUDModule:Update()
     local fph = CFC:GetFishPerHour()
     hudFrame.fphText:SetText("Fish/Hour: |cff00ff00" .. string.format("%.1f", fph) .. "|r")
 
-    -- Get current fishing buff first (needed for skill display)
+    -- Get current fishing buff once for both skill and buff displays
     local currentBuff = HUDModule:GetCurrentFishingBuff()
-    local lureBonus = 0
-    if currentBuff then
-        -- Extract bonus value from lure name (e.g., "Shiny Bauble +25" -> 25)
-        local bonus = string.match(currentBuff.name, "%+(%d+)")
-        if bonus then
-            lureBonus = tonumber(bonus) or 0
+
+    -- DEBUG: Show what GetCurrentFishingBuff returned
+    if CFC.debug then
+        print("|cff00ff00[CFC Debug - HUD Update]|r GetCurrentFishingBuff() returned:")
+        if currentBuff then
+            print("|cff00ff00[CFC Debug - HUD Update]|r   name: " .. tostring(currentBuff.name))
+            print("|cff00ff00[CFC Debug - HUD Update]|r   expirationSeconds: " .. tostring(currentBuff.expirationSeconds))
+        else
+            print("|cff00ff00[CFC Debug - HUD Update]|r   nil (no buff)")
         end
     end
 
-    -- Fishing skill (with lure bonus if active)
+    -- Fishing skill (with pole and lure bonuses displayed separately with icons)
     if CFC.db.profile.statistics.currentSkill and CFC.db.profile.statistics.currentSkill > 0 then
-        if lureBonus > 0 then
-            hudFrame.skillText:SetText("Skill: |cff00ff00" .. CFC.db.profile.statistics.currentSkill .. "|cffffff00+" .. lureBonus .. "|r|cff00ff00/" .. CFC.db.profile.statistics.maxSkill .. "|r")
-        else
-            hudFrame.skillText:SetText("Skill: |cff00ff00" .. CFC.db.profile.statistics.currentSkill .. "/" .. CFC.db.profile.statistics.maxSkill .. "|r")
+        local skillText = "Skill: |cff00ff00" .. CFC.db.profile.statistics.currentSkill .. "/" .. CFC.db.profile.statistics.maxSkill .. "|r"
+
+        -- Get fishing pole inherent bonus
+        local poleBonus = HUDModule:GetFishingPoleBonus()
+        if poleBonus and poleBonus > 0 then
+            -- Get the actual fishing pole icon from equipped item
+            local poleIcon = GetInventoryItemTexture("player", 16)
+            if not poleIcon then
+                poleIcon = "Interface\\Icons\\INV_Fishingpole_02"  -- Fallback icon
+            end
+            skillText = skillText .. " |cff00ff00+" .. poleBonus .. "|r |T" .. poleIcon .. ":14|t"
         end
+
+        -- Check for active fishing lure buff and add to skill display
+        if currentBuff then
+            -- Extract buff amount from the lure name
+            local buffAmount = string.match(currentBuff.name, "%+(%d+)")
+            if not buffAmount then
+                -- Try to map known lure names to their bonuses
+                buffAmount = lureBonus[currentBuff.name]
+            end
+
+            if buffAmount then
+                -- Get the actual lure icon from selected lure ID
+                local lureIcon = "Interface\\Icons\\INV_Misc_Orb_03"  -- Fallback icon
+                local selectedLureID = CFC.db and CFC.db.profile and CFC.db.profile.selectedLure
+                if selectedLureID then
+                    local lureTexture = GetItemIcon(selectedLureID)
+                    if lureTexture then
+                        lureIcon = lureTexture
+                    end
+                end
+
+                skillText = skillText .. " |cffffff00+" .. buffAmount .. "|r |T" .. lureIcon .. ":14|t"
+            end
+        end
+
+        hudFrame.skillText:SetText(skillText)
     else
         hudFrame.skillText:SetText("Skill: |cffaaaaaa--/--|r")
     end
 
     -- Current fishing buff (show most recent)
     if currentBuff then
-        -- Remove the bonus suffix from the lure name for display (e.g., "Shiny Bauble +25" -> "Shiny Bauble")
-        local lureNameOnly = string.gsub(currentBuff.name, "%s*%+%d+$", "")
-        hudFrame.buffText:SetText("Lure: |cffffff00" .. lureNameOnly .. "|r")
+        hudFrame.buffText:SetText("Lure: |cffffff00" .. currentBuff.name .. "|r")
 
         -- Display buff timer with color coding
         local timeRemaining = currentBuff.expirationSeconds
@@ -294,64 +405,146 @@ function HUDModule:FormatTime(seconds)
     return string.format("%d:%02d", minutes, secs)
 end
 
--- Get current fishing buff
+-- Reusable tooltip for scanning fishing pole bonus (created once)
+local poleBonusTooltip = nil
+
+-- Get fishing pole inherent bonus
+-- Returns: bonus amount (number) or nil
+function HUDModule:GetFishingPoleBonus()
+    local mainHandLink = GetInventoryItemLink("player", 16)
+    if not mainHandLink then
+        return nil
+    end
+
+    -- Create tooltip once and reuse it
+    if not poleBonusTooltip then
+        poleBonusTooltip = CreateFrame("GameTooltip", "CFCHUDPoleScanTooltip", nil, "GameTooltipTemplate")
+        poleBonusTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    end
+
+    -- Ensure tooltip is hidden before resetting
+    poleBonusTooltip:Hide()
+    poleBonusTooltip:ClearLines()
+    poleBonusTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    poleBonusTooltip:SetInventoryItem("player", 16)
+
+    -- In Classic WoW, tooltip must be shown to populate lines
+    poleBonusTooltip:Show()
+
+    local numLines = poleBonusTooltip:NumLines()
+
+    for i = 1, numLines do
+        local line = _G["CFCHUDPoleScanTooltipTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            if text then
+                -- Match patterns like "Equip: Increased Fishing +25" or "Fishing +35"
+                local bonus = string.match(text, "Fishing %+(%d+)")
+                if not bonus then
+                    bonus = string.match(text, "increased by %+(%d+)")
+                end
+                if not bonus then
+                    bonus = string.match(text, "Increases fishing by (%d+)")
+                end
+
+                if bonus then
+                    poleBonusTooltip:Hide()
+                    return tonumber(bonus)
+                end
+            end
+        end
+    end
+
+    poleBonusTooltip:Hide()
+    return nil
+end
+
+-- Reusable tooltip for scanning fishing buff (created once)
+local buffScanTooltip = nil
+
+-- Get current fishing buff (lure)
 -- Returns: { name = "Buff Name", expirationSeconds = 123 } or nil
 function HUDModule:GetCurrentFishingBuff()
     -- Check for weapon enchant first (lures)
     local hasMainHandEnchant, mainHandExpiration, mainHandCharges, mainHandEnchantId = GetWeaponEnchantInfo()
 
-    if hasMainHandEnchant then
-        -- Detect the lure name from tooltip (same method as Statistics tracking)
-        local lureName = nil
+    -- DEBUG: Show enchant info
+    if CFC.debug then
+        print("|cff00ffff[CFC Debug - HUD.lua]|r GetWeaponEnchantInfo():")
+        print("|cff00ffff[CFC Debug - HUD.lua]|r   hasMainHandEnchant: " .. tostring(hasMainHandEnchant))
+        if hasMainHandEnchant then
+            print("|cff00ffff[CFC Debug - HUD.lua]|r   mainHandExpiration: " .. tostring(mainHandExpiration))
+        end
+    end
 
-        -- Create or reuse tooltip
-        if not _G.CFCHUDBuffScanTooltip then
-            CreateFrame("GameTooltip", "CFCHUDBuffScanTooltip", nil, "GameTooltipTemplate")
+    if hasMainHandEnchant then
+        -- Try to detect lure from tooltip
+        local fishingBonus = nil
+
+        -- Create tooltip once and reuse it
+        if not buffScanTooltip then
+            buffScanTooltip = CreateFrame("GameTooltip", "CFCHUDBuffScanTooltip", nil, "GameTooltipTemplate")
+            buffScanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
         end
 
-        local tooltip = _G.CFCHUDBuffScanTooltip
-        tooltip:SetOwner(UIParent, "ANCHOR_NONE")
-        tooltip:ClearLines()
-        tooltip:SetInventoryItem("player", 16)
+        -- Ensure tooltip is hidden before resetting
+        buffScanTooltip:Hide()
+        buffScanTooltip:ClearLines()
+        buffScanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+        buffScanTooltip:SetInventoryItem("player", 16)
 
-        -- Scan tooltip for lure text
-        for i = 1, tooltip:NumLines() do
+        -- In Classic WoW, tooltip must be shown to populate lines
+        buffScanTooltip:Show()
+
+        -- DEBUG: Show all tooltip lines
+        if CFC.debug then
+            print("|cff00ffff[CFC Debug - HUD.lua]|r Scanning fishing pole tooltip...")
+            print("|cff00ffff[CFC Debug - HUD.lua]|r NumLines: " .. buffScanTooltip:NumLines())
+        end
+
+        for i = 1, buffScanTooltip:NumLines() do
             local line = _G["CFCHUDBuffScanTooltipTextLeft" .. i]
             if line then
                 local text = line:GetText()
-                if text and (string.find(text, "Lure") or string.find(text, "Increased Fishing")) then
-                    -- Remove duration text like "(10 min)" or "(13 sec)" to get consistent name
-                    lureName = string.gsub(text, "%s*%(%d+%s*%w+%)%s*$", "")
-                    break
+
+                -- DEBUG: Show each line
+                if CFC.debug and text then
+                    print("|cff00ffff[CFC Debug - HUD.lua]|r Line " .. i .. ": " .. text)
+                end
+
+                if text then
+                    -- TBC format: "Fishing Lure (+25 Fishing Skill) (10 min)"
+                    -- Match "Lure" followed by "(+number"
+                    local bonus = string.match(text, "Lure.*%(%+(%d+)")
+                    if bonus then
+                        fishingBonus = tonumber(bonus)
+
+                        -- DEBUG: Show what was found
+                        if CFC.debug then
+                            print("|cff00ffff[CFC Debug - HUD.lua]|r FOUND bonus: " .. bonus)
+                        end
+                        break
+                    end
                 end
             end
         end
 
-        tooltip:Hide()
-
-        if lureName then
-            -- Clean up the lure name by extracting the bonus and mapping to actual lure names
-            local bonus = string.match(lureName, "%+(%d+)")
-            if bonus then
-                local lureNames = {
-                    ["25"] = "Shiny Bauble",
-                    ["50"] = "Nightcrawlers",
-                    ["75"] = "Bright Baubles",
-                    ["100"] = "Aquadynamic Fish Attractor",
-                }
-
-                -- Check if it's the Alliance-only lens
-                if bonus == "50" and string.find(lureName, "Lens") then
-                    lureName = "Aquadynamic Fish Lens +" .. bonus
-                elseif bonus == "75" and string.find(lureName, "Worm") then
-                    lureName = "Flesh Eating Worm +" .. bonus
-                else
-                    lureName = (lureNames[bonus] or lureName) .. " +" .. bonus
-                end
+        -- DEBUG: Show final result
+        if CFC.debug then
+            if fishingBonus then
+                print("|cff00ffff[CFC Debug - HUD.lua]|r Final fishingBonus: " .. fishingBonus)
+            else
+                print("|cff00ffff[CFC Debug - HUD.lua]|r No fishing bonus detected!")
             end
+        end
 
+        buffScanTooltip:Hide()
+
+        if fishingBonus then
+            -- Map common bonuses to lure names
+            local buffName = bonusToLureName[fishingBonus] or ("Lure (+" .. fishingBonus .. ")")
             local expirationSeconds = math.floor(mainHandExpiration / 1000)  -- Convert milliseconds to seconds
-            return { name = lureName, expirationSeconds = expirationSeconds }
+            return { name = buffName, expirationSeconds = expirationSeconds }
         end
     end
 

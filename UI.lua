@@ -283,6 +283,11 @@ function UI:UpdateFishList()
         entry:Hide()
     end
 
+    -- Pre-query all items to trigger caching
+    for _, fish in ipairs(fishList) do
+        GetItemInfo(fish.name)
+    end
+
     -- Create or update entries
     local yOffset = -5
 
@@ -297,18 +302,139 @@ function UI:UpdateFishList()
             entry.bg:SetAllPoints()
             entry.bg:SetColorTexture(0.1, 0.1, 0.1, 0.5)
 
+            -- Icon texture
+            entry.icon = entry:CreateTexture(nil, "ARTWORK")
+            entry.icon:SetSize(24, 24)
+            entry.icon:SetPoint("LEFT", entry, "LEFT", 10, 0)
+
             entry.name = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            entry.name:SetPoint("LEFT", entry, "LEFT", 10, 0)
+            entry.name:SetPoint("LEFT", entry.icon, "RIGHT", 8, 0)
             entry.name:SetJustifyH("LEFT")
-            entry.name:SetWidth(300)
+            entry.name:SetWidth(280)
 
             entry.count = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             entry.count:SetPoint("RIGHT", entry, "RIGHT", -10, 0)
+
+            -- Store fish name for later reference
+            entry.fishName = nil
 
             frame.fishEntries[i] = entry
         end
 
         entry:SetPoint("TOPLEFT", frame.scrollChild, "TOPLEFT", 10, yOffset)
+        entry.fishName = fish.name
+
+        -- Try to get icon from cached data first (saved when fish was caught)
+        local itemTexture = nil
+        if CFC.db.profile.fishData[fish.name] and CFC.db.profile.fishData[fish.name].icon then
+            itemTexture = CFC.db.profile.fishData[fish.name].icon
+            if CFC.debug then
+                print("|cffff8800[CFC Debug]|r Fish List - Item: " .. fish.name)
+                print("|cffff8800[CFC Debug]|r   Using cached icon: " .. tostring(itemTexture))
+            end
+        end
+
+        -- If no cached icon, try GetItemInfo
+        if not itemTexture then
+            local itemName, itemLink, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, texture = GetItemInfo(fish.name)
+            itemTexture = texture
+
+            -- Cache the icon if we got it
+            if itemTexture and CFC.db.profile.fishData[fish.name] then
+                CFC.db.profile.fishData[fish.name].icon = itemTexture
+            end
+
+            -- Debug logging for icon loading
+            if CFC.debug then
+                print("|cffff8800[CFC Debug]|r Fish List - Item: " .. fish.name)
+                print("|cffff8800[CFC Debug]|r   GetItemInfo returned: " .. tostring(itemName ~= nil))
+                print("|cffff8800[CFC Debug]|r   Texture from GetItemInfo: " .. tostring(itemTexture))
+                if itemTexture then
+                    print("|cffff8800[CFC Debug]|r   Cached icon for future use")
+                end
+            end
+        end
+
+        -- If still no texture, try to find the item in bags
+        if not itemTexture then
+            if CFC.debug then
+                print("|cffff8800[CFC Debug]|r   Searching bags for item...")
+            end
+
+            -- Try to find item in player's bags
+            local success, err = pcall(function()
+                for bag = 0, 4 do
+                    -- Use C_Container API (TBC)
+                    local numSlots = 0
+                    if C_Container and C_Container.GetContainerNumSlots then
+                        numSlots = C_Container.GetContainerNumSlots(bag) or 0
+                    elseif GetContainerNumSlots then
+                        numSlots = GetContainerNumSlots(bag) or 0
+                    end
+
+                    for slot = 1, numSlots do
+                        -- Get container item link
+                        local containerItemLink = nil
+                        if C_Container and C_Container.GetContainerItemLink then
+                            containerItemLink = C_Container.GetContainerItemLink(bag, slot)
+                        elseif GetContainerItemLink then
+                            containerItemLink = GetContainerItemLink(bag, slot)
+                        end
+
+                        if containerItemLink then
+                            local bagItemName = GetItemInfo(containerItemLink)
+                            if bagItemName == fish.name then
+                                -- Found the item, get its texture from the bag slot
+                                local bagItemTexture = nil
+                                if C_Container and C_Container.GetContainerItemInfo then
+                                    local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
+                                    if itemInfo and itemInfo.iconFileID then
+                                        bagItemTexture = itemInfo.iconFileID
+                                    end
+                                elseif GetContainerItemInfo then
+                                    bagItemTexture = GetContainerItemInfo(bag, slot)
+                                end
+
+                                if bagItemTexture then
+                                    itemTexture = bagItemTexture
+
+                                    -- Cache the icon for future use
+                                    if CFC.db.profile.fishData[fish.name] then
+                                        CFC.db.profile.fishData[fish.name].icon = bagItemTexture
+                                    end
+
+                                    if CFC.debug then
+                                        print("|cffff8800[CFC Debug]|r   Found in bag " .. bag .. " slot " .. slot .. ", texture: " .. tostring(itemTexture))
+                                        print("|cffff8800[CFC Debug]|r   Cached icon for future use")
+                                    end
+                                    return  -- Exit function early when found
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if not success and CFC.debug then
+                print("|cffff8800[CFC Debug]|r   Error scanning bags: " .. tostring(err))
+            end
+
+            -- If still no texture, use default fish icon
+            if not itemTexture then
+                itemTexture = "Interface\\Icons\\INV_Misc_Fish_02"
+                if CFC.debug then
+                    print("|cffff8800[CFC Debug]|r   Item not in bags, using default fish icon")
+                end
+            end
+        end
+
+        -- Set icon (itemTexture is guaranteed to exist at this point)
+        entry.icon:SetTexture(itemTexture)
+        if CFC.debug then
+            print("|cffff8800[CFC Debug]|r   ✓ Icon set to: " .. tostring(itemTexture))
+        end
+        entry.icon:Show()
+
         entry.name:SetText(fish.name)
         entry.count:SetText("|cff00ff00" .. fish.count .. "|r caught")
         entry:Show()
@@ -696,7 +822,7 @@ function UI:CreateLuresTab()
     -- Description
     frame.desc = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     frame.desc:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -10)
-    frame.desc:SetWidth(560)
+    frame.desc:SetWidth(260)
     frame.desc:SetJustifyH("LEFT")
     frame.desc:SetText("Select your preferred fishing lure and update your macro with one click.")
 
@@ -815,16 +941,12 @@ function UI:CreateLuresTab()
         btn:SetScript("OnClick", function()
             CFC.db.profile.selectedLure = lure.id
             UI:UpdateLuresTab()
-            print("|cff00ff00Classic Fishing Companion:|r Selected " .. lure.name .. "!")
+            print("|cff00ff00Classic Fishing Companion:|r Selected " .. lure.name)
             print("|cffffcc00→|r Click 'Update CFC_ApplyLure Macro' button to update your macro")
         end)
 
-        yOffset = yOffset - 35
+        yOffset = yOffset - 40
     end
-
-    -- Update scroll child height based on number of buttons
-    local contentHeight = (#lureData * 35) + 20
-    frame.scrollChild:SetHeight(contentHeight)
 
     -- Store reference
     mainFrame.luresFrame = frame
@@ -865,7 +987,7 @@ function UI:CreateSettingsTab()
     frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -25, 5)
 
     frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
-    frame.scrollChild:SetSize(530, 500)
+    frame.scrollChild:SetSize(530, 700)
     frame.scrollFrame:SetScrollChild(frame.scrollChild)
 
     -- Settings title
@@ -951,9 +1073,33 @@ function UI:CreateSettingsTab()
     frame.announceBuffsDesc:SetTextColor(0.7, 0.7, 0.7)
     frame.announceBuffsDesc:SetText("Show on-screen warning every 30 seconds when fishing without a lure/buff applied.")
 
+    -- Announce Skill Ups Checkbox
+    frame.announceSkillUpsCheck = CreateFrame("CheckButton", "CFCAnnounceSkillUpsCheck", frame.scrollChild, "UICheckButtonTemplate")
+    frame.announceSkillUpsCheck:SetPoint("TOPLEFT", frame.announceBuffsDesc, "BOTTOMLEFT", -25, -20)
+    frame.announceSkillUpsCheck.text = frame.announceSkillUpsCheck:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    frame.announceSkillUpsCheck.text:SetPoint("LEFT", frame.announceSkillUpsCheck, "RIGHT", 5, 0)
+    frame.announceSkillUpsCheck.text:SetText("Announce Fishing Skill Increases")
+
+    frame.announceSkillUpsCheck:SetScript("OnClick", function(self)
+        CFC.db.profile.settings.announceSkillUps = self:GetChecked()
+        if CFC.db.profile.settings.announceSkillUps then
+            print("|cff00ff00Classic Fishing Companion:|r Skill increase announcements |cff00ff00enabled|r")
+        else
+            print("|cff00ff00Classic Fishing Companion:|r Skill increase announcements |cffff0000disabled|r")
+        end
+    end)
+
+    -- Announce skill ups description
+    frame.announceSkillUpsDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.announceSkillUpsDesc:SetPoint("TOPLEFT", frame.announceSkillUpsCheck, "BOTTOMLEFT", 25, -5)
+    frame.announceSkillUpsDesc:SetJustifyH("LEFT")
+    frame.announceSkillUpsDesc:SetWidth(500)
+    frame.announceSkillUpsDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.announceSkillUpsDesc:SetText("Display a chat message when your fishing skill increases.")
+
     -- Show Stats HUD Checkbox
     frame.showHUDCheck = CreateFrame("CheckButton", "CFCShowHUDCheck", frame.scrollChild, "UICheckButtonTemplate")
-    frame.showHUDCheck:SetPoint("TOPLEFT", frame.announceBuffsDesc, "BOTTOMLEFT", -25, -20)
+    frame.showHUDCheck:SetPoint("TOPLEFT", frame.announceSkillUpsDesc, "BOTTOMLEFT", -25, -20)
     frame.showHUDCheck.text = frame.showHUDCheck:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     frame.showHUDCheck.text:SetPoint("LEFT", frame.showHUDCheck, "RIGHT", 5, 0)
     frame.showHUDCheck.text:SetText("Show Stats HUD")
@@ -1021,10 +1167,120 @@ function UI:CreateSettingsTab()
     frame.debugDesc:SetTextColor(0.7, 0.7, 0.7)
     frame.debugDesc:SetText("Shows detailed debug messages in chat for troubleshooting.")
 
+    -- Data Import/Export Section
+    frame.dataManagementTitle = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.dataManagementTitle:SetPoint("TOPLEFT", frame.debugDesc, "BOTTOMLEFT", -25, -30)
+    frame.dataManagementTitle:SetText("Data Management")
+
+    -- Enable Automatic Backups Checkbox
+    frame.autoBackupCheck = CreateFrame("CheckButton", "CFCAutoBackupCheck", frame.scrollChild, "UICheckButtonTemplate")
+    frame.autoBackupCheck:SetPoint("TOPLEFT", frame.dataManagementTitle, "BOTTOMLEFT", 0, -15)
+    frame.autoBackupCheck.text = frame.autoBackupCheck:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    frame.autoBackupCheck.text:SetPoint("LEFT", frame.autoBackupCheck, "RIGHT", 5, 0)
+    frame.autoBackupCheck.text:SetText("Enable Automatic Backups")
+
+    frame.autoBackupCheck:SetScript("OnClick", function(self)
+        CFC.db.profile.backup.enabled = self:GetChecked()
+        if CFC.db.profile.backup.enabled then
+            print("|cff00ff00Classic Fishing Companion:|r Automatic backups |cff00ff00enabled|r")
+            print("|cffffcc00Info:|r Backups are created every 24 hours and stored internally")
+        else
+            print("|cff00ff00Classic Fishing Companion:|r Automatic backups |cffff0000disabled|r")
+        end
+    end)
+
+    -- Auto backup description
+    frame.autoBackupDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.autoBackupDesc:SetPoint("TOPLEFT", frame.autoBackupCheck, "BOTTOMLEFT", 25, -5)
+    frame.autoBackupDesc:SetJustifyH("LEFT")
+    frame.autoBackupDesc:SetWidth(500)
+    frame.autoBackupDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.autoBackupDesc:SetText("Automatically backs up your fishing data every 24 hours (stored in SavedVariables). Also shows export reminder every 7 days.")
+
+    -- Export Data Button
+    frame.exportButton = CreateFrame("Button", "CFCExportButton", frame.scrollChild, "UIPanelButtonTemplate")
+    frame.exportButton:SetSize(200, 30)
+    frame.exportButton:SetPoint("TOPLEFT", frame.autoBackupDesc, "BOTTOMLEFT", -25, -15)
+    frame.exportButton:SetText("Export Data")
+
+    frame.exportButton:SetScript("OnClick", function(self)
+        if CFC.ExportData then
+            CFC:ExportData()
+        end
+    end)
+
+    -- Export description
+    frame.exportDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.exportDesc:SetPoint("TOPLEFT", frame.exportButton, "BOTTOMLEFT", 25, -5)
+    frame.exportDesc:SetJustifyH("LEFT")
+    frame.exportDesc:SetWidth(500)
+    frame.exportDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.exportDesc:SetText("Export all fishing data to a string that can be saved externally and imported later.")
+
+    -- Import Data Button
+    frame.importButton = CreateFrame("Button", "CFCImportButton", frame.scrollChild, "UIPanelButtonTemplate")
+    frame.importButton:SetSize(200, 30)
+    frame.importButton:SetPoint("TOPLEFT", frame.exportDesc, "BOTTOMLEFT", -25, -15)
+    frame.importButton:SetText("Import Data")
+
+    frame.importButton:SetScript("OnClick", function(self)
+        if CFC.UI and CFC.UI.ShowImportDialog then
+            CFC.UI:ShowImportDialog()
+        end
+    end)
+
+    -- Import description
+    frame.importDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.importDesc:SetPoint("TOPLEFT", frame.importButton, "BOTTOMLEFT", 25, -5)
+    frame.importDesc:SetJustifyH("LEFT")
+    frame.importDesc:SetWidth(500)
+    frame.importDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.importDesc:SetText("Import fishing data from a previously exported string. This will replace your current data!")
+
+    -- Restore from Backup Button
+    frame.restoreBackupButton = CreateFrame("Button", "CFCRestoreBackupButton", frame.scrollChild, "UIPanelButtonTemplate")
+    frame.restoreBackupButton:SetSize(200, 30)
+    frame.restoreBackupButton:SetPoint("TOPLEFT", frame.importDesc, "BOTTOMLEFT", -25, -15)
+    frame.restoreBackupButton:SetText("Restore from Backup")
+
+    frame.restoreBackupButton:SetScript("OnClick", function(self)
+        if CFC.RestoreFromBackup then
+            StaticPopup_Show("CFC_RESTORE_BACKUP_CONFIRM")
+        end
+    end)
+
+    -- Restore backup description with status
+    frame.restoreBackupDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.restoreBackupDesc:SetPoint("TOPLEFT", frame.restoreBackupButton, "BOTTOMLEFT", 25, -5)
+    frame.restoreBackupDesc:SetJustifyH("LEFT")
+    frame.restoreBackupDesc:SetWidth(500)
+    frame.restoreBackupDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.restoreBackupDesc:SetText("Restore fishing data from the last automatic backup.")
+
+    -- Purge Item Button
+    frame.purgeButton = CreateFrame("Button", "CFCPurgeButton", frame.scrollChild, "UIPanelButtonTemplate")
+    frame.purgeButton:SetSize(200, 30)
+    frame.purgeButton:SetPoint("TOPLEFT", frame.restoreBackupDesc, "BOTTOMLEFT", -25, -15)
+    frame.purgeButton:SetText("Purge Item")
+
+    frame.purgeButton:SetScript("OnClick", function(self)
+        if CFC.UI and CFC.UI.ShowPurgeDialog then
+            CFC.UI:ShowPurgeDialog()
+        end
+    end)
+
+    -- Purge description
+    frame.purgeDesc = frame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.purgeDesc:SetPoint("TOPLEFT", frame.purgeButton, "BOTTOMLEFT", 25, -5)
+    frame.purgeDesc:SetJustifyH("LEFT")
+    frame.purgeDesc:SetWidth(500)
+    frame.purgeDesc:SetTextColor(0.7, 0.7, 0.7)
+    frame.purgeDesc:SetText("Remove a specific item from your catches and statistics by name.")
+
     -- Clear Statistics Button
     frame.clearStatsButton = CreateFrame("Button", "CFCClearStatsButton", frame.scrollChild, "UIPanelButtonTemplate")
     frame.clearStatsButton:SetSize(200, 30)
-    frame.clearStatsButton:SetPoint("TOPLEFT", frame.debugDesc, "BOTTOMLEFT", -25, -20)
+    frame.clearStatsButton:SetPoint("TOPLEFT", frame.purgeDesc, "BOTTOMLEFT", -25, -20)
     frame.clearStatsButton:SetText("Clear All Statistics")
 
     frame.clearStatsButton:SetScript("OnClick", function(self)
@@ -1055,12 +1311,26 @@ function UI:UpdateSettings()
     -- Update announcement checkboxes
     frame.announceCatchesCheck:SetChecked(CFC.db.profile.settings.announceCatches)
     frame.announceBuffsCheck:SetChecked(CFC.db.profile.settings.announceBuffs)
+    frame.announceSkillUpsCheck:SetChecked(CFC.db.profile.settings.announceSkillUps)
 
     -- Update HUD checkboxes
     frame.showHUDCheck:SetChecked(CFC.db.profile.hud.show)
     frame.lockHUDCheck:SetChecked(CFC.db.profile.hud.locked)
     -- Disable lock checkbox if HUD is hidden
     frame.lockHUDCheck:SetEnabled(CFC.db.profile.hud.show)
+
+    -- Update backup checkbox
+    frame.autoBackupCheck:SetChecked(CFC.db.profile.backup.enabled)
+
+    -- Update restore backup button description with backup status
+    if CFC.db.profile.backup.data and CFC.db.profile.backup.data.timestamp then
+        local backupDate = date("%Y-%m-%d %H:%M:%S", CFC.db.profile.backup.data.timestamp)
+        frame.restoreBackupDesc:SetText("Restore fishing data from the last automatic backup (Created: " .. backupDate .. ").")
+        frame.restoreBackupButton:Enable()
+    else
+        frame.restoreBackupDesc:SetText("Restore fishing data from the last automatic backup. (No backup available yet)")
+        frame.restoreBackupButton:Disable()
+    end
 end
 
 -- Format time in seconds to readable string
@@ -1145,6 +1415,22 @@ StaticPopupDialogs["CFC_CLEAR_STATS_CONFIRM"] = {
     preferredIndex = 3,
 }
 
+-- Confirmation dialog for restoring from backup
+StaticPopupDialogs["CFC_RESTORE_BACKUP_CONFIRM"] = {
+    text = "Restore fishing data from automatic backup?\n\nThis will replace your current data with the backup snapshot.\n\nYour current session progress will be preserved.",
+    button1 = "Yes, Restore Backup",
+    button2 = "Cancel",
+    OnAccept = function()
+        if CFC.RestoreFromBackup then
+            CFC:RestoreFromBackup()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CFC_CLEAR_GEAR_SETS"] = {
     text = "Are you sure you want to clear ALL gear sets?\n\nThis will delete:\n• Combat gear set\n• Fishing gear set\n\nYou will need to reconfigure your gear sets after this.\n\nThis action CANNOT be undone!",
     button1 = "Yes, Clear Gear Sets",
@@ -1174,3 +1460,240 @@ StaticPopupDialogs["CFC_CLEAR_GEAR_SETS"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+-- Create custom export/import dialog
+local exportImportFrame = nil
+
+function UI:CreateExportImportDialog()
+    if exportImportFrame then
+        return exportImportFrame
+    end
+
+    -- Create frame
+    local frame = CreateFrame("Frame", "CFCExportImportFrame", UIParent, "BasicFrameTemplateWithInset")
+    frame:SetSize(500, 400)
+    frame:SetPoint("CENTER")
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetFrameStrata("DIALOG")
+    frame:Hide()
+
+    -- Title
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    frame.title:SetPoint("TOP", frame, "TOP", 0, -5)
+    frame.title:SetText("Export/Import Data")
+
+    -- Close button
+    frame.CloseButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+
+    -- Instructions
+    frame.instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.instructions:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -30)
+    frame.instructions:SetWidth(470)
+    frame.instructions:SetJustifyH("LEFT")
+    frame.instructions:SetText("Copy the data below (Ctrl+A, Ctrl+C) or paste imported data here:")
+
+    -- Background container for visual background
+    frame.bgContainer = CreateFrame("Frame", nil, frame)
+    frame.bgContainer:SetPoint("TOPLEFT", frame.instructions, "BOTTOMLEFT", 5, -10)
+    frame.bgContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 50)
+
+    -- Create background texture
+    frame.bg = frame.bgContainer:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints(frame.bgContainer)
+    frame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.9)
+
+    -- Scroll frame for the edit box
+    frame.scrollFrame = CreateFrame("ScrollFrame", "CFCExportScrollFrame", frame.bgContainer, "UIPanelScrollFrameTemplate")
+    frame.scrollFrame:SetPoint("TOPLEFT", 5, -5)
+    frame.scrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
+
+    -- Edit box
+    frame.editBox = CreateFrame("EditBox", "CFCExportEditBox", frame.scrollFrame)
+    frame.editBox:SetMultiLine(true)
+    frame.editBox:SetMaxLetters(0)
+    frame.editBox:SetFontObject(GameFontHighlightSmall)
+    frame.editBox:SetWidth(420)
+    frame.editBox:SetAutoFocus(false)
+    frame.editBox:SetEnabled(true)
+
+    frame.editBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    -- Enable Ctrl+A to select all
+    frame.editBox:SetScript("OnChar", function(self, text)
+        -- This allows text input
+    end)
+
+    frame.scrollFrame:SetScrollChild(frame.editBox)
+
+    -- Copy All button
+    frame.copyButton = CreateFrame("Button", "CFCCopyAllButton", frame, "UIPanelButtonTemplate")
+    frame.copyButton:SetSize(120, 25)
+    frame.copyButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, 15)
+    frame.copyButton:SetText("Select All")
+    frame.copyButton:SetScript("OnClick", function()
+        frame.editBox:HighlightText()
+        frame.editBox:SetFocus()
+    end)
+
+    -- Import button
+    frame.importButton = CreateFrame("Button", "CFCImportButton", frame, "UIPanelButtonTemplate")
+    frame.importButton:SetSize(120, 25)
+    frame.importButton:SetPoint("BOTTOM", frame, "BOTTOM", 0, 15)
+    frame.importButton:SetText("Import Data")
+    frame.importButton:SetScript("OnClick", function()
+        local importString = frame.editBox:GetText()
+        if importString and importString ~= "" then
+            if CFC.ImportData then
+                CFC:ImportData(importString)
+                frame:Hide()
+            end
+        else
+            print("|cffff0000Classic Fishing Companion:|r No data to import!")
+        end
+    end)
+
+    -- Close button
+    frame.closeButton = CreateFrame("Button", "CFCCloseButton", frame, "UIPanelButtonTemplate")
+    frame.closeButton:SetSize(120, 25)
+    frame.closeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 15)
+    frame.closeButton:SetText("Close")
+    frame.closeButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+
+    exportImportFrame = frame
+    return frame
+end
+
+function UI:ShowExportDialog(data)
+    local frame = self:CreateExportImportDialog()
+    frame.title:SetText("Export Data")
+    frame.instructions:SetText("Click 'Select All', then use |cff00ff00Ctrl+Insert|r to copy (or right-click and copy):")
+    frame.editBox:SetText(data)
+    frame.editBox:HighlightText()
+    frame.editBox:SetFocus()
+    frame.importButton:Hide()
+    frame.copyButton:Show()
+    frame:Show()
+end
+
+function UI:ShowImportDialog()
+    local frame = self:CreateExportImportDialog()
+    frame.title:SetText("Import Data")
+    frame.instructions:SetText("|cffff0000WARNING:|r Paste data using |cff00ff00Shift+Insert|r or Ctrl+V. This will replace your current data!")
+    frame.editBox:SetText("")
+    frame.importButton:Show()
+    frame.copyButton:Hide()
+    frame:Show()
+
+    -- Focus the edit box after a brief delay to ensure it's ready
+    C_Timer.After(0.1, function()
+        frame.editBox:SetFocus()
+        frame.editBox:SetCursorPosition(0)
+    end)
+end
+
+-- Create and show purge item dialog
+function UI:ShowPurgeDialog()
+    -- Create simple input dialog
+    local dialog = CreateFrame("Frame", "CFCPurgeDialog", UIParent, "BasicFrameTemplateWithInset")
+    dialog:SetSize(400, 150)
+    dialog:SetPoint("CENTER")
+    dialog:SetFrameStrata("DIALOG")
+    dialog:SetMovable(true)
+    dialog:EnableMouse(true)
+    dialog:RegisterForDrag("LeftButton")
+    dialog:SetScript("OnDragStart", dialog.StartMoving)
+    dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+
+    -- Title
+    dialog.title = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    dialog.title:SetPoint("TOP", dialog, "TOP", 0, -5)
+    dialog.title:SetText("Purge Item")
+
+    -- Instructions
+    dialog.instructions = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dialog.instructions:SetPoint("TOPLEFT", dialog, "TOPLEFT", 15, -30)
+    dialog.instructions:SetWidth(370)
+    dialog.instructions:SetJustifyH("LEFT")
+    dialog.instructions:SetText("Enter the exact name of the item to remove from your database:")
+
+    -- Input box
+    dialog.inputBox = CreateFrame("EditBox", "CFCPurgeInputBox", dialog, "InputBoxTemplate")
+    dialog.inputBox:SetSize(360, 30)
+    dialog.inputBox:SetPoint("TOP", dialog.instructions, "BOTTOM", 0, -10)
+    dialog.inputBox:SetAutoFocus(true)
+    dialog.inputBox:SetMaxLetters(100)
+
+    dialog.inputBox:SetScript("OnEscapePressed", function(self)
+        dialog:Hide()
+        dialog:SetParent(nil)
+        dialog = nil
+    end)
+
+    dialog.inputBox:SetScript("OnEnterPressed", function(self)
+        local itemName = self:GetText()
+        if itemName and itemName ~= "" then
+            if CFC.PurgeItem then
+                CFC:PurgeItem(itemName)
+            end
+        end
+        dialog:Hide()
+        dialog:SetParent(nil)
+        dialog = nil
+    end)
+
+    -- Purge button
+    dialog.purgeButton = CreateFrame("Button", "CFCPurgeConfirmButton", dialog, "UIPanelButtonTemplate")
+    dialog.purgeButton:SetSize(120, 25)
+    dialog.purgeButton:SetPoint("BOTTOM", dialog, "BOTTOM", -65, 15)
+    dialog.purgeButton:SetText("Purge Item")
+    dialog.purgeButton:SetScript("OnClick", function()
+        local itemName = dialog.inputBox:GetText()
+        if itemName and itemName ~= "" then
+            if CFC.PurgeItem then
+                CFC:PurgeItem(itemName)
+            end
+        else
+            print("|cffff0000Classic Fishing Companion:|r Please enter an item name!")
+        end
+        dialog:Hide()
+        dialog:SetParent(nil)
+        dialog = nil
+    end)
+
+    -- Cancel button
+    dialog.cancelButton = CreateFrame("Button", "CFCPurgeCancelButton", dialog, "UIPanelButtonTemplate")
+    dialog.cancelButton:SetSize(120, 25)
+    dialog.cancelButton:SetPoint("BOTTOM", dialog, "BOTTOM", 65, 15)
+    dialog.cancelButton:SetText("Cancel")
+    dialog.cancelButton:SetScript("OnClick", function()
+        dialog:Hide()
+        dialog:SetParent(nil)
+        dialog = nil
+    end)
+
+    -- Close button
+    dialog.CloseButton:SetScript("OnClick", function()
+        dialog:Hide()
+        dialog:SetParent(nil)
+        dialog = nil
+    end)
+
+    dialog:Show()
+
+    -- Focus the input box after a brief delay
+    C_Timer.After(0.1, function()
+        if dialog and dialog.inputBox then
+            dialog.inputBox:SetFocus()
+        end
+    end)
+end

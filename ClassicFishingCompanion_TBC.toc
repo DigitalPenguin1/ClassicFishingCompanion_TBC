@@ -1,8 +1,8 @@
 ## Interface: 20505
-## Title: Classic Fishing Companion
+## Title: Classic Fishing Companion TBC
 ## Notes: Track your fishing catches, fish per hour, locations, and statistics
 ## Author: Relyk
-## Version: 1.0.4
+## Version: 1.0.5
 ## SavedVariablesPerCharacter: ClassicFishingCompanionDB
 
 # Libraries (Embedded Ace3)
